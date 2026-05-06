@@ -90,6 +90,21 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		return
 	}
 
+	// === 早期心跳与非流式 deadline ===
+	// 在所有 forward / 重试 / 退避之前启动早期心跳协程，覆盖前置阶段（连接慢、failover、退避叠加）
+	// 期间向客户端发 SSE 注释字节，避免被 Cloudflare 在 120s 零字节阈值上判 524。
+	// 非流式请求无法发心跳（破坏 application/json 协议），改为设置总耗时硬上限，超时本地返回 504。
+	isStream := internalRequest.Stream != nil && *internalRequest.Stream
+	if !isStream {
+		if maxSec, _ := op.SettingGetInt(dbmodel.SettingKeyNonStreamMaxDurationSec); maxSec > 0 {
+			deadlineCtx, cancelDeadline := context.WithTimeout(c.Request.Context(), time.Duration(maxSec)*time.Second)
+			defer cancelDeadline()
+			c.Request = c.Request.WithContext(deadlineCtx)
+		}
+	}
+	hb := startEarlyHeartbeat(c, isStream)
+	defer hb.Stop()
+
 	// 初始化 Metrics
 	metrics := NewRelayMetrics(apiKeyID, requestModel, rawBody, internalRequest)
 	responsesPassthroughRequired := internalRequest.HasOpenAIResponsesPassthrough()
@@ -105,6 +120,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		requestModel:    requestModel,
 		iter:            iter,
 		rawBody:         rawBody,
+		heartbeat:       hb,
 	}
 
 	var lastErr error
@@ -253,9 +269,9 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		if result.ResetConversation {
 			metrics.Save(c.Request.Context(), false, result.Err, iter.Attempts())
 			if publicErr, ok := classifyWSPublicError(result.Err, result.StatusCode); ok {
-				resp.Error(c, publicErr.Status, publicErr.Message)
+				hb.FlushOrError(c, publicErr.Status, publicErr.Message)
 			} else {
-				resp.Error(c, result.StatusCode, result.Err.Error())
+				hb.FlushOrError(c, result.StatusCode, result.Err.Error())
 			}
 			return
 		}
@@ -271,7 +287,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	if responsesPassthroughRequired && !responsesPassthroughCapableFound {
 		err := fmt.Errorf("openai responses native tools require an openai responses channel")
 		metrics.Save(c.Request.Context(), false, err, iter.Attempts())
-		resp.Error(c, http.StatusBadRequest, "当前请求包含 OpenAI Responses 原生工具，仅支持 OpenAI Responses 通道直通")
+		hb.FlushOrError(c, http.StatusBadRequest, "当前请求包含 OpenAI Responses 原生工具，仅支持 OpenAI Responses 通道直通")
 		return
 	}
 	metrics.Save(c.Request.Context(), false, lastErr, iter.Attempts())
@@ -281,14 +297,14 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		if lastResult.RetryAfter > 0 {
 			c.Header("Retry-After", fmt.Sprintf("%d", int(lastResult.RetryAfter.Seconds())))
 		}
-		resp.Error(c, lastResult.StatusCode, "channel failed")
+		hb.FlushOrError(c, lastResult.StatusCode, "channel failed")
 		return
 	}
 	if lastResult.StatusCode > 0 {
-		resp.Error(c, lastResult.StatusCode, "channel failed")
+		hb.FlushOrError(c, lastResult.StatusCode, "channel failed")
 		return
 	}
-	resp.Error(c, http.StatusBadGateway, "channel failed")
+	hb.FlushOrError(c, http.StatusBadGateway, "channel failed")
 }
 
 func circuitFailureKind(retryEnabled bool, statusCode int) balancer.FailureKind {
@@ -584,6 +600,9 @@ func (ra *relayAttempt) clientRequestHeaders() http.Header {
 
 // handleWSStreamResponse processes events from an upstream WebSocket reader.
 func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUpstreamReader) error {
+	// 交接早期心跳给本函数内层 ticker
+	ra.heartbeat.Hand()
+
 	// Determine client writer
 	writer := ra.getStreamWriter()
 
@@ -592,6 +611,11 @@ func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUp
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
 	writer.Header().Set("X-Accel-Buffering", "no")
+
+	heartbeatTicker, heartbeatC := newStreamHeartbeatTicker()
+	if heartbeatTicker != nil {
+		defer heartbeatTicker.Stop()
+	}
 
 	firstToken := true
 	var firstTokenTimer *time.Timer
@@ -606,6 +630,23 @@ func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUp
 		}()
 	}
 
+	// 异步读取上游 WS 事件，使主循环可以与 heartbeat/ctx/firstToken 并行 select
+	type wsReadResult struct {
+		data []byte
+		err  error
+	}
+	results := make(chan wsReadResult, 1)
+	safe.Go("relay-ws-stream-read", func() {
+		defer close(results)
+		for {
+			eventData, err := reader.ReadEvent(ctx)
+			results <- wsReadResult{data: eventData, err: err}
+			if err != nil {
+				return
+			}
+		}
+	})
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -617,44 +658,53 @@ func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUp
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds) on ws stream, switching channel", ra.firstTokenTimeOutSec)
 			return fmt.Errorf("first token timeout (%ds)", ra.firstTokenTimeOutSec)
-		default:
-		}
-
-		eventData, err := reader.ReadEvent(ctx)
-		if err != nil {
-			if err == io.EOF {
+		case <-heartbeatC:
+			if err := writeSSEHeartbeat(writer); err != nil {
+				return err
+			}
+		case r, ok := <-results:
+			if !ok {
 				if firstToken {
 					return fmt.Errorf("ws stream ended before first event")
 				}
 				log.Infof("ws stream end")
 				return nil
 			}
-			return fmt.Errorf("ws stream read error: %w", err)
-		}
-
-		// Transform through outbound → internal → inbound pipeline
-		data, err := ra.transformStreamData(ctx, string(eventData))
-		if err != nil || len(data) == 0 {
-			continue
-		}
-
-		if firstToken {
-			ra.metrics.SetFirstTokenTime(time.Now())
-			firstToken = false
-			if firstTokenTimer != nil {
-				if !firstTokenTimer.Stop() {
-					select {
-					case <-firstTokenTimer.C:
-					default:
+			if r.err != nil {
+				if r.err == io.EOF {
+					if firstToken {
+						return fmt.Errorf("ws stream ended before first event")
 					}
+					log.Infof("ws stream end")
+					return nil
 				}
-				firstTokenTimer = nil
-				firstTokenC = nil
+				return fmt.Errorf("ws stream read error: %w", r.err)
 			}
-		}
 
-		writer.Write(data)
-		writer.Flush()
+			// Transform through outbound → internal → inbound pipeline
+			data, err := ra.transformStreamData(ctx, string(r.data))
+			if err != nil || len(data) == 0 {
+				continue
+			}
+
+			if firstToken {
+				ra.metrics.SetFirstTokenTime(time.Now())
+				firstToken = false
+				if firstTokenTimer != nil {
+					if !firstTokenTimer.Stop() {
+						select {
+						case <-firstTokenTimer.C:
+						default:
+						}
+					}
+					firstTokenTimer = nil
+					firstTokenC = nil
+				}
+			}
+
+			writer.Write(data)
+			writer.Flush()
+		}
 	}
 }
 
@@ -837,6 +887,9 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
 		return fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(body))
 	}
+
+	// 交接早期心跳给本函数内层 ticker，避免双路 flush 竞争
+	ra.heartbeat.Hand()
 
 	writer := ra.getStreamWriter()
 
@@ -1141,6 +1194,9 @@ func (ra *relayAttempt) handleStreamResponsePassthroughOpenAIResponses(ctx conte
 		return fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(body))
 	}
 
+	// 交接早期心跳给本函数内层 ticker
+	ra.heartbeat.Hand()
+
 	writer := ra.getStreamWriter()
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.Header().Set("Cache-Control", "no-cache")
@@ -1415,6 +1471,9 @@ func (ra *relayAttempt) handleStreamResponsePassthroughAnthropic(ctx context.Con
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
 		return fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(body))
 	}
+
+	// 交接早期心跳给本函数内层 ticker
+	ra.heartbeat.Hand()
 
 	writer := ra.getStreamWriter()
 

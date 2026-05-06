@@ -95,6 +95,12 @@ type relayRequest struct {
 
 	// streamWriter allows overriding the response writer (nil = use c.Writer)
 	streamWriter StreamWriter
+
+	// heartbeat 早期心跳协程句柄，覆盖 Handler 整个生命周期（包括 forward 之前的所有阶段）。
+	// 进入 handleStreamResponse* 时由各函数调用 hb.Hand() 交接给内层 ticker。
+	// 失败兜底路径通过 hb.FlushOrError 协议感知地返回错误（已写 SSE 头则发 SSE event）。
+	// 可能为空壳实例（非流式或心跳未启用），但不会为 nil。
+	heartbeat *earlyHeartbeat
 }
 
 // requestContext returns the request context from gin or the standalone context.

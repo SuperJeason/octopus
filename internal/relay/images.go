@@ -122,6 +122,20 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 	metrics := newImagesRelayMetrics(apiKeyID, requestModel)
 	metrics.RequestContent = buildImagesRequestContentForLog(isMultipart, bc, jsonPayload)
 
+	// === 早期心跳与非流式 deadline ===
+	// 流式：启动早期心跳协程，覆盖前置阶段（连接慢、failover、退避）期间向客户端发 SSE 注释字节
+	// 非流式：设置总耗时硬上限，超时本地返回 504，避免被 Cloudflare 截断为 524
+	if !stream {
+		if maxSec, _ := op.SettingGetInt(model.SettingKeyNonStreamMaxDurationSec); maxSec > 0 {
+			deadlineCtx, cancelDeadline := context.WithTimeout(ctx, time.Duration(maxSec)*time.Second)
+			defer cancelDeadline()
+			ctx = deadlineCtx
+			c.Request = c.Request.WithContext(deadlineCtx)
+		}
+	}
+	hb := startEarlyHeartbeat(c, stream)
+	defer hb.Stop()
+
 	var lastErr error
 
 	for iter.Next() {
@@ -172,7 +186,7 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 		span := iter.StartAttempt(channel.ID, usedKey.ID, channel.Name)
 
 		// 尝试一次转发
-		statusCode, written, usage, upstreamCT, fwdErr := imagesAttempt(ctx, endpoint, c, bc, isMultipart, boundary, jsonPayload, stream, channel, usedKey.ChannelKey, group.FirstTokenTimeOut, metrics, item.ModelName)
+		statusCode, written, usage, upstreamCT, fwdErr := imagesAttempt(ctx, endpoint, c, bc, isMultipart, boundary, jsonPayload, stream, channel, usedKey.ChannelKey, group.FirstTokenTimeOut, metrics, item.ModelName, hb)
 
 		// 更新 channel key 状态
 		usedKey.StatusCode = statusCode
@@ -229,7 +243,7 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 
 	// 所有通道都失败
 	metrics.Save(ctx, false, lastErr, iter.Attempts())
-	resp.Error(c, http.StatusBadGateway, "all channels failed")
+	hb.FlushOrError(c, http.StatusBadGateway, "all channels failed")
 }
 
 type imagesUsage struct {
@@ -508,6 +522,7 @@ func imagesAttempt(
 	firstTokenTimeOutSec int,
 	metrics *imagesRelayMetrics,
 	actualModel string,
+	hb *earlyHeartbeat,
 ) (statusCode int, written bool, usage *imagesUsage, upstreamCT string, err error) {
 	// 构建 URL（baseUrl.Path 后追加 endpoint）
 	baseURL := channel.GetBaseUrl()
@@ -590,7 +605,7 @@ func imagesAttempt(
 			b, _ := io.ReadAll(io.LimitReader(respUp.Body, imagesUpstreamErrorBodyLimit))
 			return respUp.StatusCode, false, nil, upstreamCT, fmt.Errorf("upstream error: %d: %s", respUp.StatusCode, string(b))
 		}
-		u, w, err := proxySSE(ctx, c, respUp, firstTokenTimeOutSec, metrics)
+		u, w, err := proxySSE(ctx, c, respUp, firstTokenTimeOutSec, metrics, hb)
 		return respUp.StatusCode, w, u, upstreamCT, err
 	}
 
@@ -708,11 +723,14 @@ func proxyNonStream(c *gin.Context, respUp *http.Response) (*imagesUsage, bool, 
 }
 
 // proxySSE 将上游 SSE 逐行解析 event/data/空行并透传到下游；首事件计为 FirstTokenTime；支持 FirstTokenTimeOut 切换。
-func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstTokenTimeOutSec int, metrics *imagesRelayMetrics) (*imagesUsage, bool, error) {
+func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstTokenTimeOutSec int, metrics *imagesRelayMetrics, hb *earlyHeartbeat) (*imagesUsage, bool, error) {
 	if ct := respUp.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "text/event-stream") {
 		b, _ := io.ReadAll(io.LimitReader(respUp.Body, imagesUpstreamErrorBodyLimit))
 		return nil, false, fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(b))
 	}
+
+	// 交接早期心跳给本函数内层 ticker
+	hb.Hand()
 
 	// 设置 SSE 响应头
 	c.Header("Content-Type", "text/event-stream")

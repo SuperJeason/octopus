@@ -26,6 +26,7 @@ export const SettingKey = {
     CircuitBreakerMaxCooldown: 'circuit_breaker_max_cooldown',
     RelayWSUpgradeEnabled: 'relay_ws_upgrade_enabled',
     SSEHeartbeatInterval: 'sse_heartbeat_interval',
+    NonStreamMaxDurationSec: 'nonstream_max_duration_sec',
 } as const;
 
 /**
