@@ -1296,7 +1296,7 @@ function SiteAccountPanel({
         [visibleModels, displayLimit],
     );
 
-    const displayLimitResetKey = `${account.account_id}|${activeFilter.kind}|${activeFilter.kind === 'group' ? activeFilter.groupKey : ''}|${modelSearchTerm}|${panelPreferences.quickFilters.join(',')}|${panelPreferences.tableSort.field}|${panelPreferences.tableSort.order}`;
+    const displayLimitResetKey = `${account.account_id}|${activeFilter.kind}|${activeFilter.kind === 'group' ? activeFilter.groupKey : ''}|${modelSearchTerm}|${panelPreferences.quickFilters.join(',')}`;
     const [prevDisplayLimitResetKey, setPrevDisplayLimitResetKey] = useState(displayLimitResetKey);
     if (prevDisplayLimitResetKey !== displayLimitResetKey) {
         setPrevDisplayLimitResetKey(displayLimitResetKey);
@@ -1829,104 +1829,102 @@ function SiteAccountPanel({
                 </div>
 
                 {pendingKeyGroups.length > 0 || projectedGroups.length > 0 || unsupportedRouteCount > 0 || selectedVisibleCount > 0 ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap gap-2">
-                            {pendingKeyGroups.length > 0 ? (
-                                <Popover>
-                                    <PopoverTrigger asChild>
-                                        <button
-                                            type="button"
-                                            className="inline-flex h-8 items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-medium text-amber-800 transition hover:bg-amber-500/15 dark:text-amber-200"
-                                        >
-                                            <CircleAlert className="size-3.5" />
-                                            待建 Key {pendingKeyGroups.length} 组
-                                        </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent align="start" className="w-72 rounded-2xl border border-amber-500/30 bg-card p-3 shadow-xl">
-                                        <div className="space-y-2">
-                                            <div className="text-xs font-medium text-muted-foreground">未创建 Key 的分组</div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {pendingKeyGroups.map((group) => (
-                                                    <Button
-                                                        key={group.group_key}
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="rounded-full border-amber-500/30 bg-white/60 text-amber-800 hover:bg-white dark:bg-background/40 dark:text-amber-200"
-                                                        onClick={() => handleOpenCreateKey(group)}
-                                                        disabled={createKeyMutation.isPending}
-                                                    >
-                                                        {group.group_name || group.group_key}
-                                                        <span className="text-[10px] text-amber-700/80 dark:text-amber-200/80">
-                                                            {createKeyMutation.isPending && creatingGroup?.group_key === group.group_key ? '创建中...' : '快捷创建'}
-                                                        </span>
-                                                    </Button>
-                                                ))}
-                                            </div>
+                    <div className="flex min-h-8 flex-wrap items-center gap-2">
+                        {pendingKeyGroups.length > 0 ? (
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <button
+                                        type="button"
+                                        className="inline-flex h-8 items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-medium text-amber-800 transition hover:bg-amber-500/15 dark:text-amber-200"
+                                    >
+                                        <CircleAlert className="size-3.5" />
+                                        待建 Key {pendingKeyGroups.length} 组
+                                    </button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="w-72 rounded-2xl border border-amber-500/30 bg-card p-3 shadow-xl">
+                                    <div className="space-y-2">
+                                        <div className="text-xs font-medium text-muted-foreground">未创建 Key 的分组</div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {pendingKeyGroups.map((group) => (
+                                                <Button
+                                                    key={group.group_key}
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="rounded-full border-amber-500/30 bg-white/60 text-amber-800 hover:bg-white dark:bg-background/40 dark:text-amber-200"
+                                                    onClick={() => handleOpenCreateKey(group)}
+                                                    disabled={createKeyMutation.isPending}
+                                                >
+                                                    {group.group_name || group.group_key}
+                                                    <span className="text-[10px] text-amber-700/80 dark:text-amber-200/80">
+                                                        {createKeyMutation.isPending && creatingGroup?.group_key === group.group_key ? '创建中...' : '快捷创建'}
+                                                    </span>
+                                                </Button>
+                                            ))}
                                         </div>
-                                    </PopoverContent>
-                                </Popover>
-                            ) : null}
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+                        ) : null}
 
-                            {visibleGroups.some((group) => group.masked_pending_key_count > 0 && group.enabled_key_count === 0) ? (
-                                <button
-                                    type="button"
-                                    onClick={handleFocusAttention}
-                                    className="inline-flex h-8 items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-medium text-amber-800 transition hover:bg-amber-500/15 dark:text-amber-200"
-                                >
-                                    <CircleAlert className="size-3.5" />
-                                    待补全文明文 Key
-                                </button>
-                            ) : null}
+                        {visibleGroups.some((group) => group.masked_pending_key_count > 0 && group.enabled_key_count === 0) ? (
+                            <button
+                                type="button"
+                                onClick={handleFocusAttention}
+                                className="inline-flex h-8 items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-medium text-amber-800 transition hover:bg-amber-500/15 dark:text-amber-200"
+                            >
+                                <CircleAlert className="size-3.5" />
+                                待补全文明文 Key
+                            </button>
+                        ) : null}
 
-                            {projectedGroups.length > 0 ? (
-                                <Popover>
-                                    <PopoverTrigger asChild>
-                                        <button
-                                            type="button"
-                                            className="inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 text-xs font-medium text-foreground transition hover:bg-muted/60"
-                                        >
-                                            <KeyRound className="size-3.5 text-primary" />
-                                            投影 Key {projectedGroups.length} 组
-                                        </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent align="start" className="w-72 rounded-2xl border border-border/70 bg-card p-3 shadow-xl">
-                                        <div className="space-y-2">
-                                            <div className="text-xs font-medium text-muted-foreground">投影渠道 Key 管理</div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {projectedGroups.map((group) => (
-                                                    <Button
-                                                        key={`projected-${group.group_key}`}
-                                                        type="button"
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="rounded-full"
-                                                        onClick={() => handleOpenProjectedKeys(group)}
-                                                    >
-                                                        {group.group_name || group.group_key}
-                                                        <span className="text-[10px] text-muted-foreground">{group.projected_keys.length} Keys</span>
-                                                    </Button>
-                                                ))}
-                                            </div>
+                        {projectedGroups.length > 0 ? (
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <button
+                                        type="button"
+                                        className="inline-flex h-8 items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 text-xs font-medium text-foreground transition hover:bg-muted/60"
+                                    >
+                                        <KeyRound className="size-3.5 text-primary" />
+                                        投影 Key {projectedGroups.length} 组
+                                    </button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="w-72 rounded-2xl border border-border/70 bg-card p-3 shadow-xl">
+                                    <div className="space-y-2">
+                                        <div className="text-xs font-medium text-muted-foreground">投影渠道 Key 管理</div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {projectedGroups.map((group) => (
+                                                <Button
+                                                    key={`projected-${group.group_key}`}
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="rounded-full"
+                                                    onClick={() => handleOpenProjectedKeys(group)}
+                                                >
+                                                    {group.group_name || group.group_key}
+                                                    <span className="text-[10px] text-muted-foreground">{group.projected_keys.length} Keys</span>
+                                                </Button>
+                                            ))}
                                         </div>
-                                    </PopoverContent>
-                                </Popover>
-                            ) : null}
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
+                        ) : null}
 
-                            {unsupportedRouteCount > 0 ? (
-                                <button
-                                    type="button"
-                                    onClick={handleFocusAttention}
-                                    className="inline-flex h-8 items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-medium text-amber-800 transition hover:bg-amber-500/15 dark:text-amber-200"
-                                >
-                                    <CircleAlert className="size-3.5" />
-                                    未识别端点 {unsupportedRouteCount}
-                                </button>
-                            ) : null}
-                        </div>
+                        {unsupportedRouteCount > 0 ? (
+                            <button
+                                type="button"
+                                onClick={handleFocusAttention}
+                                className="inline-flex h-8 items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-medium text-amber-800 transition hover:bg-amber-500/15 dark:text-amber-200"
+                            >
+                                <CircleAlert className="size-3.5" />
+                                未识别端点 {unsupportedRouteCount}
+                            </button>
+                        ) : null}
 
                         {selectedVisibleCount > 0 ? (
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="ml-auto flex flex-wrap items-center gap-2">
                                 <span className="text-xs font-medium text-foreground">已选 {selectedVisibleCount} 个</span>
                                 <Select value={bulkMoveTarget} onValueChange={(value) => setBulkMoveTarget(value as SiteModelRouteType)}>
                                     <SelectTrigger className="h-7 w-[10rem] rounded-xl text-xs">
@@ -2272,7 +2270,7 @@ function SiteChannelDialog({
     }, [jumpRequest, card.site_id, activeAccountId, onJumpHandled]);
 
     return (
-        <div className="flex max-h-[88vh] flex-col overflow-hidden">
+        <div className="flex h-[88vh] flex-col overflow-hidden">
             <header className="flex flex-none items-center gap-2 border-b border-border/70 px-5 py-3 text-left sm:px-6">
                 <MorphingDialogDescription className="sr-only">
                     站点渠道管理面板
@@ -2474,10 +2472,6 @@ function SiteCardImpl({
                 <MorphingDialogTrigger className="h-full w-full">
                     <article
                         className="flex h-full w-full flex-col gap-4 rounded-3xl border border-border/70 bg-card p-4 text-left transition hover:border-primary/20 hover:bg-card/90"
-                        style={{
-                            contentVisibility: 'auto',
-                            containIntrinsicSize: '280px',
-                        }}
                     >
                         <header className="flex items-center justify-between gap-3">
                             <div className="flex min-w-0 flex-1 items-center gap-2">
