@@ -390,7 +390,6 @@ func (o *MessageOutbound) TransformStreamEvent(ctx context.Context, eventData []
 				toolCall := model.ToolCall{Index: o.toolIndex, Type: "function", Function: model.FunctionCall{Arguments: *streamEvent.Delta.PartialJSON}}
 				if existing := o.toolCalls[o.toolIndex]; existing != nil {
 					toolCall.ID = existing.ID
-					toolCall.Function.Name = existing.Function.Name
 				}
 				events = append(events, model.StreamEvent{Kind: model.StreamEventKindToolCallDelta, ID: o.streamID, Model: o.streamModel, Index: toolCall.Index, ToolCall: &toolCall, Delta: &model.StreamDelta{Arguments: *streamEvent.Delta.PartialJSON}})
 			}

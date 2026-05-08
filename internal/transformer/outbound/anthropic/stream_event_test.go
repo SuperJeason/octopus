@@ -88,6 +88,9 @@ func TestTransformStreamEventAnthropicNativeMapping(t *testing.T) {
 	if events[0].Delta == nil || events[0].Delta.Arguments != `{"q":"x"}` {
 		t.Fatalf("tool arguments lost: %+v", events[0].Delta)
 	}
+	if events[0].ToolCall == nil || events[0].ToolCall.Function.Name != "" {
+		t.Fatalf("tool delta should not repeat function name: %+v", events[0].ToolCall)
+	}
 
 	// Test message_delta with usage
 	msgDeltaChunk := []byte(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20}}`)

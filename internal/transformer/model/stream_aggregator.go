@@ -139,7 +139,11 @@ func MergeToolCallDelta(toolCalls []ToolCall, delta ToolCall) []ToolCall {
 				toolCalls[i].Type = delta.Type
 			}
 			if delta.Function.Name != "" {
-				toolCalls[i].Function.Name += delta.Function.Name
+				if toolCalls[i].Function.Name == "" {
+					toolCalls[i].Function.Name = delta.Function.Name
+				} else if toolCalls[i].Function.Name != delta.Function.Name {
+					toolCalls[i].Function.Name += delta.Function.Name
+				}
 			}
 			if delta.Function.Arguments != "" {
 				toolCalls[i].Function.Arguments += delta.Function.Arguments
