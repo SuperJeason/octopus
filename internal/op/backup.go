@@ -9,6 +9,7 @@ import (
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/utils/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -37,6 +38,9 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 	}
 	if err := conn.Find(&d.ChannelKeys).Error; err != nil {
 		return nil, fmt.Errorf("export channel_keys: %w", err)
+	}
+	if err := conn.Find(&d.ProxyConfigurations).Error; err != nil {
+		return nil, fmt.Errorf("export proxy_configurations: %w", err)
 	}
 	if err := conn.Find(&d.Sites).Error; err != nil {
 		return nil, fmt.Errorf("export sites: %w", err)
@@ -119,19 +123,66 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 
 	err := conn.Transaction(func(tx *gorm.DB) error {
 		channelIDMap := make(map[int]int)
+		proxyConfigIDMap := make(map[int]int)
 		siteIDMap := make(map[int]int)
 		accountIDMap := make(map[int]int)
 		userGroupIDMap := make(map[int]int)
 		groupIDMap := make(map[int]int)
 		apiKeyIDMap := make(map[int]int)
 
-		// 1. Channels (dedup by name)
+		migrateLegacyDumpProxyFields(dump)
+
+		// 1. ProxyConfigurations (dedup by url; disambiguate name conflicts)
+		for i := range dump.ProxyConfigurations {
+			proxyConfig := dump.ProxyConfigurations[i]
+			oldID := proxyConfig.ID
+			proxyConfig.ID = 0
+			proxyConfig.ReferenceCount = 0
+			if err := proxyConfig.Validate(); err != nil {
+				return fmt.Errorf("import proxy_configurations: %w", err)
+			}
+
+			var existing model.ProxyConfiguration
+			if err := tx.Where("url = ?", proxyConfig.URL).First(&existing).Error; err == nil {
+				if proxyConfig.Enabled && !existing.Enabled {
+					if err := tx.Model(&existing).Update("enabled", true).Error; err != nil {
+						return fmt.Errorf("import proxy_configurations: %w", err)
+					}
+				}
+				proxyConfigIDMap[oldID] = existing.ID
+				continue
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("import proxy_configurations: %w", err)
+			}
+			if err := tx.Where("name = ?", proxyConfig.Name).First(&existing).Error; err == nil {
+				oldName := proxyConfig.Name
+				proxyConfig.Name = uniqueProxyConfigName(proxyConfig.Name, tx)
+				log.Warnw("proxy configuration name conflict during import",
+					"old_id", oldID,
+					"existing_id", existing.ID,
+					"existing_url", existing.URL,
+					"import_url", proxyConfig.URL,
+					"old_name", oldName,
+					"new_name", proxyConfig.Name,
+				)
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("import proxy_configurations: %w", err)
+			}
+			if err := tx.Create(&proxyConfig).Error; err != nil {
+				return fmt.Errorf("import proxy_configurations: %w", err)
+			}
+			proxyConfigIDMap[oldID] = proxyConfig.ID
+			res.RowsAffected["proxy_configurations"]++
+		}
+
+		// 2. Channels (dedup by name)
 		for i := range dump.Channels {
 			ch := dump.Channels[i]
 			oldID := ch.ID
 			ch.ID = 0
 			ch.Keys = nil
 			ch.Stats = nil
+			remapProxyConfigID(&ch.ProxyMode, &ch.ProxyConfigID, proxyConfigIDMap)
 
 			var existing model.Channel
 			if err := tx.Where("name = ?", ch.Name).First(&existing).Error; err == nil {
@@ -147,7 +198,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["channels"]++
 		}
 
-		// 2. ChannelKeys (remap channel_id, dedup by channel_id+channel_key)
+		// 3. ChannelKeys (remap channel_id, dedup by channel_id+channel_key)
 		for i := range dump.ChannelKeys {
 			key := dump.ChannelKeys[i]
 			key.ID = 0
@@ -166,12 +217,13 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["channel_keys"]++
 		}
 
-		// 3. Sites (dedup by platform+base_url)
+		// 4. Sites (dedup by platform+base_url)
 		for i := range dump.Sites {
 			site := dump.Sites[i]
 			oldID := site.ID
 			site.ID = 0
 			site.Accounts = nil
+			remapProxyConfigID(&site.ProxyMode, &site.ProxyConfigID, proxyConfigIDMap)
 
 			normalizedURL := normalizeImportBaseURL(site.BaseURL)
 			if normalizedURL != "" {
@@ -193,7 +245,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["sites"]++
 		}
 
-		// 4. SiteAccounts (remap site_id, dedup by site_id+name)
+		// 5. SiteAccounts (remap site_id, dedup by site_id+name)
 		for i := range dump.SiteAccounts {
 			account := dump.SiteAccounts[i]
 			oldID := account.ID
@@ -202,6 +254,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			account.UserGroups = nil
 			account.Models = nil
 			account.ChannelBindings = nil
+			remapProxyConfigID(&account.ProxyMode, &account.ProxyConfigID, proxyConfigIDMap)
 
 			if newSiteID, ok := siteIDMap[account.SiteID]; ok {
 				account.SiteID = newSiteID
@@ -221,7 +274,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["site_accounts"]++
 		}
 
-		// 5. SiteTokens (remap site_account_id, dedup by site_account_id+token+group_key)
+		// 6. SiteTokens (remap site_account_id, dedup by site_account_id+token+group_key)
 		for i := range dump.SiteTokens {
 			token := dump.SiteTokens[i]
 			token.ID = 0
@@ -240,7 +293,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["site_tokens"]++
 		}
 
-		// 6. SiteUserGroups (remap site_account_id, dedup by uniqueIndex)
+		// 7. SiteUserGroups (remap site_account_id, dedup by uniqueIndex)
 		for i := range dump.SiteUserGroups {
 			group := dump.SiteUserGroups[i]
 			oldID := group.ID
@@ -262,7 +315,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["site_user_groups"]++
 		}
 
-		// 7. SiteModels (remap site_account_id, dedup by uniqueIndex)
+		// 8. SiteModels (remap site_account_id, dedup by uniqueIndex)
 		for i := range dump.SiteModels {
 			m := dump.SiteModels[i]
 			m.ID = 0
@@ -281,7 +334,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["site_models"]++
 		}
 
-		// 8. SiteChannelBindings (remap all FKs, dedup by both unique constraints)
+		// 9. SiteChannelBindings (remap all FKs, dedup by both unique constraints)
 		for i := range dump.SiteChannelBindings {
 			binding := dump.SiteChannelBindings[i]
 			binding.ID = 0
@@ -317,7 +370,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["site_channel_bindings"]++
 		}
 
-		// 9. Groups (dedup by name)
+		// 10. Groups (dedup by name)
 		for i := range dump.Groups {
 			g := dump.Groups[i]
 			oldID := g.ID
@@ -338,7 +391,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["groups"]++
 		}
 
-		// 10. GroupItems (remap group_id+channel_id, dedup by uniqueIndex)
+		// 11. GroupItems (remap group_id+channel_id, dedup by uniqueIndex)
 		for i := range dump.GroupItems {
 			item := dump.GroupItems[i]
 			item.ID = 0
@@ -360,14 +413,14 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["group_items"]++
 		}
 
-		// 11. LLMInfos (upsert by name - unchanged)
+		// 12. LLMInfos (upsert by name - unchanged)
 		if n, err := createUpsertAll(tx, dump.LLMInfos, []clause.Column{{Name: "name"}}); err != nil {
 			return fmt.Errorf("import llm_infos: %w", err)
 		} else {
 			res.RowsAffected["llm_infos"] = n
 		}
 
-		// 12. APIKeys (dedup by api_key field)
+		// 13. APIKeys (dedup by api_key field)
 		for i := range dump.APIKeys {
 			key := dump.APIKeys[i]
 			oldID := key.ID
@@ -387,14 +440,14 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			res.RowsAffected["api_keys"]++
 		}
 
-		// 13. Settings (upsert by key - unchanged)
+		// 14. Settings (upsert by key - unchanged)
 		if n, err := createUpsertSettings(tx, dump.Settings); err != nil {
 			return fmt.Errorf("import settings: %w", err)
 		} else {
 			res.RowsAffected["settings"] = n
 		}
 
-		// 14. Stats (remap FK IDs, then upsert)
+		// 15. Stats (remap FK IDs, then upsert)
 		if dump.IncludeStats {
 			if n, err := createUpsertAll(tx, dump.StatsTotal, []clause.Column{{Name: "id"}}); err != nil {
 				return fmt.Errorf("import stats_total: %w", err)
@@ -483,7 +536,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 			}
 		}
 
-		// 15. RelayLogs (Snowflake IDs - keep createDoNothing)
+		// 16. RelayLogs (Snowflake IDs - keep createDoNothing)
 		if dump.IncludeLogs {
 			if n, err := createDoNothing(tx, dump.RelayLogs); err != nil {
 				return fmt.Errorf("import relay_logs: %w", err)
@@ -497,7 +550,156 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 	if err != nil {
 		return nil, err
 	}
+	// The import transaction has already committed; cache refresh failures are non-fatal
+	// and can be recovered by a later InitCache/refresh cycle.
+	if err := proxyConfigurationRefreshCache(ctx); err != nil {
+		log.Warnw("refresh proxy configuration cache after import failed",
+			"operation", "db_import_incremental",
+			"error", err,
+		)
+	}
 	return res, nil
+}
+
+func migrateLegacyDumpProxyFields(dump *model.DBDump) {
+	if dump == nil {
+		return
+	}
+	proxyIDByURL := make(map[string]int)
+	for _, proxyConfig := range dump.ProxyConfigurations {
+		if normalized, err := model.NormalizeProxyURL(proxyConfig.URL); err == nil && proxyConfig.ID > 0 {
+			proxyIDByURL[normalized] = proxyConfig.ID
+		}
+	}
+	ensureProxyConfig := func(raw string) *int {
+		normalized, err := model.NormalizeProxyURL(raw)
+		if err != nil {
+			return nil
+		}
+		if id, ok := proxyIDByURL[normalized]; ok {
+			return &id
+		}
+		id := -len(proxyIDByURL) - 1
+		proxyIDByURL[normalized] = id
+		dump.ProxyConfigurations = append(dump.ProxyConfigurations, model.ProxyConfiguration{
+			ID:      id,
+			Name:    fmt.Sprintf("Imported Proxy %d", len(proxyIDByURL)),
+			URL:     normalized,
+			Enabled: true,
+			Remark:  "由历史备份代理配置迁移生成",
+		})
+		return &id
+	}
+	for i := range dump.Channels {
+		ch := &dump.Channels[i]
+		if ch.ProxyMode != "" {
+			continue
+		}
+		if !ch.Proxy {
+			ch.ProxyMode = model.ProxyUsageModeDirect
+			ch.ProxyConfigID = nil
+		} else if ch.ChannelProxy != nil && strings.TrimSpace(*ch.ChannelProxy) != "" {
+			ch.ProxyMode = model.ProxyUsageModePool
+			ch.ProxyConfigID = ensureProxyConfig(*ch.ChannelProxy)
+		} else {
+			ch.ProxyMode = model.ProxyUsageModeSystem
+			ch.ProxyConfigID = nil
+		}
+	}
+	for i := range dump.Sites {
+		site := &dump.Sites[i]
+		if site.ProxyMode != "" {
+			continue
+		}
+		if site.Proxy {
+			if site.SiteProxy != nil && strings.TrimSpace(*site.SiteProxy) != "" {
+				site.ProxyMode = model.ProxyUsageModePool
+				site.ProxyConfigID = ensureProxyConfig(*site.SiteProxy)
+			} else {
+				site.ProxyMode = model.ProxyUsageModeSystem
+				site.ProxyConfigID = nil
+			}
+		} else if site.UseSystemProxy {
+			site.ProxyMode = model.ProxyUsageModeSystem
+			site.ProxyConfigID = nil
+		} else {
+			site.ProxyMode = model.ProxyUsageModeDirect
+			site.ProxyConfigID = nil
+		}
+	}
+	for i := range dump.SiteAccounts {
+		account := &dump.SiteAccounts[i]
+		if account.ProxyMode != "" {
+			continue
+		}
+		if account.AccountProxy != nil && strings.TrimSpace(*account.AccountProxy) != "" {
+			account.ProxyMode = model.ProxyUsageModePool
+			account.ProxyConfigID = ensureProxyConfig(*account.AccountProxy)
+		} else {
+			account.ProxyMode = model.ProxyUsageModeInherit
+			account.ProxyConfigID = nil
+		}
+	}
+}
+
+func uniqueProxyConfigName(baseName string, tx *gorm.DB) string {
+	baseName = strings.TrimSpace(baseName)
+	if baseName == "" {
+		baseName = "imported-proxy"
+	}
+	candidate := baseName
+	index := 2
+	for {
+		var count int64
+		if err := tx.Model(&model.ProxyConfiguration{}).Where("name = ?", candidate).Count(&count).Error; err != nil {
+			return candidate
+		}
+		if count == 0 {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s (%d)", baseName, index)
+		index++
+	}
+}
+
+func remapProxyConfigID(mode *model.ProxyUsageMode, id **int, idMap map[int]int) {
+	if mode == nil || id == nil || *mode != model.ProxyUsageModePool {
+		if id != nil {
+			*id = nil
+		}
+		return
+	}
+	if *id == nil {
+		log.Warnw("remapProxyConfigID downgraded proxy mode",
+			"original_mode", *mode,
+			"proxy_config_id", nil,
+			"reason", "nil",
+		)
+		*mode = model.ProxyUsageModeDirect
+		*id = nil
+		return
+	}
+	if newID, ok := idMap[**id]; ok {
+		*id = &newID
+		return
+	}
+	if **id <= 0 {
+		log.Warnw("remapProxyConfigID downgraded proxy mode",
+			"original_mode", *mode,
+			"proxy_config_id", **id,
+			"reason", "invalid",
+		)
+		*mode = model.ProxyUsageModeDirect
+		*id = nil
+		return
+	}
+	log.Warnw("remapProxyConfigID downgraded proxy mode",
+		"original_mode", *mode,
+		"proxy_config_id", **id,
+		"reason", "not found in idMap",
+	)
+	*mode = model.ProxyUsageModeDirect
+	*id = nil
 }
 
 func createDoNothing[T any](tx *gorm.DB, rows []T) (int64, error) {

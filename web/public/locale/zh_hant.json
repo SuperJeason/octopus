@@ -737,5 +737,87 @@
                 "missing_data": "Sub2API 回應缺少必要資料，請檢查站點相容性或稍後重試。"
             }
         }
+    },
+    "proxyPool": {
+        "name": "代理池",
+        "manage": "開啟代理池管理",
+        "empty": "代理池為空",
+        "noEnabled": "沒有可用的代理設定",
+        "selectConfig": "選擇代理設定",
+        "selectRequired": "請選擇代理池設定",
+        "disabledSelected": "目前選擇的代理設定已停用，執行時會失敗；儲存前請改選可用代理。",
+        "disabledSuffix": "（已停用）",
+        "createFailed": "代理設定建立失敗：",
+        "updateFailed": "代理設定更新失敗：",
+        "deleteFailed": "代理設定刪除失敗：",
+        "testFailed": "代理設定測試失敗：",
+        "mode": {
+            "label": "代理模式",
+            "inherit": "繼承站點設定",
+            "direct": "直連",
+            "system": "系統代理",
+            "pool": "代理池"
+        },
+        "dialog": {
+            "title": "代理池",
+            "description": "管理可重複使用的代理設定，站點、站點帳號和普通渠道可從這裡選擇代理。",
+            "searchPlaceholder": "搜尋名稱、URL 或備註",
+            "loading": "載入中...",
+            "loadFailed": "載入失敗：{message}",
+            "empty": "暫無代理設定",
+            "enabled": "啟用",
+            "disabled": "停用",
+            "references": "引用 {count}",
+            "referencesTitle": "查看引用",
+            "referencesDescription": "{name} 目前被以下位置使用。點擊跳轉圖示可定位到對應位置。",
+            "referencesEmpty": "暫無引用",
+            "jumpToReference": "跳轉到引用位置",
+            "managedChannelTitle": "投影渠道：{channel}",
+            "expandReference": "展開投影渠道",
+            "collapseReference": "收起投影渠道",
+            "derivedReferences": "投影 {count}",
+            "referenceTypes": {
+                "site": "站點",
+                "siteAccount": "帳號",
+                "managedChannel": "託管渠道",
+                "channel": "渠道",
+                "reference": "引用"
+            },
+            "referenceLocations": {
+                "site": "站點",
+                "archivedSite": "已封存站點",
+                "siteNamed": "站點：{name}",
+                "siteAccount": "站點帳號",
+                "managedChannel": "站點投影渠道（由站點/帳號繼承，不計入引用數）",
+                "managedChannelUnderSite": "由站點 {site} / 帳號代理投影，不單獨計數",
+                "channel": "普通渠道"
+            },
+            "test": "測試",
+            "edit": "編輯",
+            "delete": "刪除",
+            "deleteBlocked": "仍被引用，不能刪除",
+            "formTitleCreate": "新增代理設定",
+            "formTitleEdit": "編輯代理設定",
+            "formDescription": "URL 支援 http、https、socks、socks5。",
+            "new": "新增",
+            "name": "名稱",
+            "url": "代理 URL",
+            "remark": "備註",
+            "testUrl": "測試目標 URL",
+            "testDraft": "測試目前表單代理",
+            "submitCreate": "建立代理設定",
+            "submitEdit": "儲存修改",
+            "created": "代理設定已建立",
+            "updated": "代理設定已更新",
+            "deleted": "代理設定已刪除",
+            "deleteReferenced": "該代理設定仍被引用，請先解除引用",
+            "formRequired": "請填寫代理名稱和 URL",
+            "testSuccess": "代理可連通：HTTP {statusCode} · {durationMs}ms",
+            "testFailed": "代理測試失敗",
+            "operationFailed": "操作失敗"
+        },
+        "site": {
+            "inherit": "繼承站點代理"
+        }
     }
 }
