@@ -160,7 +160,6 @@
     },
     "setting": {
         "appearance": "外觀",
-        "system": "系統",
         "theme": {
             "label": "主題",
             "light": "淺色",
@@ -192,29 +191,20 @@
             "example": "只允許指定域名: https://example.com,https://example2.com"
         },
         "responsesWS": {
-            "enabled": {
-                "label": "OpenAI Responses WebSocket",
-                "description": "為客戶端 WebSocket /v1/responses 入站啟用上游 WebSocket，預設關閉。"
-            },
-            "defaultMode": {
-                "label": "Responses WS 預設模式",
-                "description": "OpenAI Responses 渠道的預設上游 WS 模式，可被渠道級設定覆蓋。",
-                "passthrough": "直通",
-                "transform": "轉換",
-                "off": "關閉"
+            "label": "OpenAI Responses WebSocket",
+            "description": "為客戶端 WebSocket /v1/responses 入站啟用上游 WebSocket。「啟用 · 預設關閉」表示能力開啟但預設不使用，渠道可單獨開啟；直通/轉換為渠道未覆蓋時的預設模式。",
+            "mode": {
+                "disabled": "禁用",
+                "defaultOff": "啟用 · 預設關閉",
+                "passthrough": "啟用 · 直通",
+                "transform": "啟用 · 轉換"
             }
         },
         "sseHeartbeat": {
-            "label": "SSE 流式心跳間隔（秒）",
-            "description": "設定為 0 禁用心跳；Cloudflare 反代場景建議 30-60 秒。",
+            "label": "SSE 心跳間隔（秒）",
+            "description": "同時作為流中心跳間隔與上游流建立前的首次心跳延遲；設定為 0 禁用。Cloudflare 反代場景建議 30-60 秒。",
             "compatibility": "部分客戶端可能錯誤處理 SSE 註解，如遇相容問題可關閉。",
             "placeholder": "0 = 禁用，建議 30-60"
-        },
-        "ssePreStreamHeartbeat": {
-            "label": "SSE 流建立前心跳延遲（秒）",
-            "description": "設定為 0 禁用建立前心跳；啟用後會在上游流尚未建立且等待超過該秒數時發送 SSE 註解。",
-            "risk": "可降低 Cloudflare 524 風險，但可能影響部分客戶端重試判斷。",
-            "placeholder": "0 = 禁用，可選 90-100"
         },
         "groupHealth": {
             "label": "分組健康檢查",
@@ -238,65 +228,68 @@
         },
         "outlierRetirement": {
             "title": "被動離群退役",
-            "hint": "基於真實請求的成敗序列自動退役持續失敗的投影渠道（停用而非刪除），探活恢復後自動啟用。僅作用於站點投影渠道，預設關閉。",
+            "hint": "根據真實請求的成敗記錄，自動暫時停用持續失敗的站點投影渠道（停用而非刪除），之後定期探測，確認恢復後自動重新啟用。停用前會參考同站點其他渠道的狀態，並發送探測請求複核，避免誤判；每個帳號始終保留至少一個啟用的渠道。僅作用於站點投影渠道，預設關閉。",
             "enabled": {
                 "label": "啟用被動離群退役"
             },
             "interval": {
                 "label": "評估間隔（分鐘）",
+                "description": "後台每隔該時間執行一輪評估與恢復探測。",
                 "placeholder": "請輸入間隔分鐘數"
             },
             "failRate": {
                 "label": "失敗率閾值（%）",
+                "description": "視窗內失敗請求佔比達到該值，渠道才可能被判定為異常。",
                 "placeholder": "請輸入失敗率百分比"
             },
             "minSamples": {
                 "label": "最小樣本數",
+                "description": "視窗內請求數不足該值時不做判定，避免流量稀少時誤判。",
                 "placeholder": "請輸入最小樣本數"
             },
             "consecFails": {
                 "label": "連續失敗閾值",
+                "description": "失敗率達標後，還需最近連續失敗達到該次數（或視窗內無任何成功）才會進入退役流程。",
                 "placeholder": "請輸入連續失敗次數"
             },
             "windowMinutes": {
                 "label": "滾動視窗時長（分鐘）",
+                "description": "只統計最近這段時間內的請求記錄，更早的記錄自動失效。",
                 "placeholder": "請輸入視窗分鐘數"
             },
             "windowCapacity": {
                 "label": "視窗樣本上限（≤20）",
+                "description": "視窗內最多保留的請求記錄條數，超出時丟棄最舊的。",
                 "placeholder": "請輸入樣本上限"
             },
             "recoverStreak": {
-                "label": "恢復所需連續探活成功次數",
+                "label": "恢復探測成功次數",
+                "description": "已退役渠道連續探測成功達到該次數後，自動重新啟用。",
                 "placeholder": "請輸入成功次數"
             },
             "reapMinutes": {
-                "label": "視窗回收時長（分鐘）",
+                "label": "閒置視窗回收（分鐘）",
+                "description": "渠道超過該時間沒有新請求時，釋放其統計視窗佔用的記憶體。",
                 "placeholder": "請輸入回收分鐘數"
             },
             "cfRecoverMinutes": {
-                "label": "Cloudflare 退役恢復冷卻（分鐘）",
+                "label": "Cloudflare 恢復冷卻（分鐘）",
+                "description": "因 Cloudflare 攔截被退役的渠道，等待該時間後才開始恢復探測，減少無效探測。",
                 "placeholder": "請輸入冷卻分鐘數"
             }
         },
         "saved": "已儲存",
         "saveFailed": "儲存失敗",
         "backup": {
-            "title": "備份 / 復原",
             "export": {
                 "title": "匯出",
-                "includeLogs": "包含日誌",
                 "includeStats": "包含統計",
-                "format": {
-                    "label": "格式",
-                    "json": "JSON",
-                    "zip": "ZIP",
-                    "logsHint": "包含日誌時強制使用 ZIP（NDJSON 串流寫入），避免記憶體佔用過高。"
-                },
-                "button": "下載",
+                "button": "匯出 JSON",
                 "exporting": "匯出中...",
                 "success": "開始匯出",
-                "failed": "匯出失敗"
+                "failed": "匯出失敗",
+                "withLogsButton": "匯出含日誌歸檔 (ZIP)",
+                "withLogsWarning": "含日誌歸檔為 ZIP 串流匯出，僅供留存查閱，無法匯入復原。"
             },
             "import": {
                 "title": "匯入（增量）",
@@ -304,6 +297,7 @@
                 "button": "匯入 JSON",
                 "importing": "匯入中...",
                 "noFile": "請先選擇 JSON 檔案",
+                "invalidFileType": "僅支援 JSON（.json）格式的備份檔案",
                 "success": "匯入成功",
                 "failed": "匯入失敗",
                 "result": "匯入結果"
@@ -363,38 +357,6 @@
                 "deleteError": "API 金鑰刪除失敗"
             }
         },
-        "llmPrice": {
-            "title": "模型價格",
-            "updateInterval": {
-                "label": "自動更新間隔（小時）",
-                "placeholder": "請輸入間隔（小時）"
-            },
-            "manualUpdate": {
-                "label": "手動更新價格",
-                "button": "立即更新",
-                "updating": "更新中..."
-            },
-            "lastUpdate": "上次更新",
-            "neverUpdated": "從未更新",
-            "updateSuccess": "價格更新成功",
-            "updateFailed": "價格更新失敗"
-        },
-        "llmSync": {
-            "title": "供應源同步",
-            "syncInterval": {
-                "label": "自動同步間隔（小時）",
-                "placeholder": "請輸入間隔（小時）"
-            },
-            "manualSync": {
-                "label": "手動同步供應源",
-                "button": "立即同步",
-                "syncing": "同步中..."
-            },
-            "lastSync": "上次同步",
-            "neverSynced": "從未同步",
-            "syncSuccess": "供應源同步成功",
-            "syncFailed": "供應源同步失敗"
-        },
         "account": {
             "title": "帳戶設定",
             "save": "儲存",
@@ -439,7 +401,7 @@
             "updateFailed": "更新失敗"
         },
         "log": {
-            "title": "日誌設定",
+            "title": "歷史日誌",
             "enabled": {
                 "label": "啟用歷史日誌"
             },
@@ -454,6 +416,49 @@
             },
             "clearSuccess": "日誌已清空",
             "clearFailed": "清空失敗"
+        },
+        "network": {
+            "title": "網路與服務"
+        },
+        "reliability": {
+            "title": "可靠性"
+        },
+        "syncTasks": {
+            "title": "同步與定時任務",
+            "intervalPlaceholder": "間隔（小時）",
+            "last": "上次",
+            "never": "從未執行",
+            "llmSync": {
+                "label": "供應源同步",
+                "button": "立即同步",
+                "pending": "同步中...",
+                "success": "供應源同步成功",
+                "failed": "供應源同步失敗"
+            },
+            "llmPrice": {
+                "label": "模型價格更新",
+                "button": "立即更新",
+                "pending": "更新中...",
+                "success": "價格更新成功",
+                "failed": "價格更新失敗"
+            },
+            "siteSync": {
+                "label": "站點全量同步",
+                "button": "立即同步",
+                "pending": "同步中...",
+                "success": "已觸發後台站點全量同步",
+                "failed": "觸發同步失敗"
+            },
+            "siteCheckin": {
+                "label": "站點全量簽到",
+                "button": "立即簽到",
+                "pending": "簽到中...",
+                "success": "已觸發後台站點全量簽到",
+                "failed": "觸發簽到失敗"
+            }
+        },
+        "data": {
+            "title": "資料管理"
         }
     },
     "group": {

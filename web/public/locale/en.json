@@ -160,7 +160,6 @@
     },
     "setting": {
         "appearance": "Appearance",
-        "system": "System",
         "theme": {
             "label": "Theme",
             "light": "Light",
@@ -192,29 +191,20 @@
             "example": "Only allow specific domains: https://example.com,https://example2.com"
         },
         "responsesWS": {
-            "enabled": {
-                "label": "OpenAI Responses WebSocket",
-                "description": "Opt-in upstream WebSocket support for client WebSocket /v1/responses ingress."
-            },
-            "defaultMode": {
-                "label": "Responses WS Default Mode",
-                "description": "Default upstream WS mode for OpenAI Responses channels unless overridden per channel.",
-                "passthrough": "Passthrough",
-                "transform": "Transform",
-                "off": "Off"
+            "label": "OpenAI Responses WebSocket",
+            "description": "Opt-in upstream WebSocket for client WebSocket /v1/responses ingress. \"Enabled · Default off\" turns the capability on without using it by default (channels can opt in); Passthrough/Transform is the default mode unless overridden per channel.",
+            "mode": {
+                "disabled": "Disabled",
+                "defaultOff": "Enabled · Default off",
+                "passthrough": "Enabled · Passthrough",
+                "transform": "Enabled · Transform"
             }
         },
         "sseHeartbeat": {
             "label": "SSE Heartbeat Interval (seconds)",
-            "description": "Set to 0 to disable heartbeat; 30-60 seconds is recommended behind Cloudflare.",
+            "description": "Applies to both the in-stream heartbeat interval and the first heartbeat delay before the upstream stream is established; 0 disables. 30-60 seconds is recommended behind Cloudflare.",
             "compatibility": "Some clients may mishandle SSE comments, so disable it if compatibility issues occur.",
             "placeholder": "0 = disabled, recommend 30-60"
-        },
-        "ssePreStreamHeartbeat": {
-            "label": "SSE Pre-stream Heartbeat Delay (seconds)",
-            "description": "Set to 0 to disable pre-stream heartbeats. When enabled, an SSE comment is sent only if the upstream stream is still not established after this delay.",
-            "risk": "This may reduce Cloudflare 524 risk but can affect retry behavior in some clients.",
-            "placeholder": "0 = disabled, optional 90-100"
         },
         "groupHealth": {
             "label": "Group Health Checks",
@@ -238,65 +228,68 @@
         },
         "outlierRetirement": {
             "title": "Passive Outlier Retirement",
-            "hint": "Automatically retires (disables, not deletes) projected channels that keep failing, based on real request success/failure sequences; auto-recovers via probing. Applies only to site projected channels. Off by default.",
+            "hint": "Temporarily disables site projected channels that keep failing on real requests (disabled, never deleted), then probes them periodically and re-enables them once they recover. Before disabling, sibling channels of the same site are cross-checked and a probe request confirms the failure to avoid false positives; at least one enabled channel is always kept per account. Applies only to site projected channels. Off by default.",
             "enabled": {
                 "label": "Enable Passive Outlier Retirement"
             },
             "interval": {
                 "label": "Evaluation Interval (minutes)",
+                "description": "How often the background task runs one round of evaluation and recovery probing.",
                 "placeholder": "Enter interval in minutes"
             },
             "failRate": {
                 "label": "Failure Rate Threshold (%)",
+                "description": "A channel is considered abnormal only when the failure ratio within the window reaches this value.",
                 "placeholder": "Enter failure rate percent"
             },
             "minSamples": {
                 "label": "Minimum Samples",
+                "description": "Evaluation is skipped while the window holds fewer requests than this, avoiding misjudgment on sparse traffic.",
                 "placeholder": "Enter minimum samples"
             },
             "consecFails": {
                 "label": "Consecutive Failure Threshold",
+                "description": "After the failure rate is met, the most recent consecutive failures must also reach this count (or the window has no success at all).",
                 "placeholder": "Enter consecutive failures"
             },
             "windowMinutes": {
                 "label": "Rolling Window Duration (minutes)",
+                "description": "Only requests within this recent period are counted; older records expire automatically.",
                 "placeholder": "Enter window minutes"
             },
             "windowCapacity": {
                 "label": "Window Sample Capacity (≤20)",
+                "description": "Maximum number of request records kept per window; the oldest are dropped first.",
                 "placeholder": "Enter sample capacity"
             },
             "recoverStreak": {
-                "label": "Consecutive Probe Successes to Recover",
+                "label": "Probe Successes to Recover",
+                "description": "A retired channel is re-enabled after this many consecutive successful probes.",
                 "placeholder": "Enter success count"
             },
             "reapMinutes": {
-                "label": "Idle Window Reap TTL (minutes)",
+                "label": "Idle Window Reap (minutes)",
+                "description": "Frees a channel's in-memory stats window after it has received no new requests for this long.",
                 "placeholder": "Enter reap minutes"
             },
             "cfRecoverMinutes": {
-                "label": "Cloudflare Retired Recovery Cooldown (minutes)",
+                "label": "Cloudflare Recovery Cooldown (minutes)",
+                "description": "Channels retired due to Cloudflare protection wait this long before recovery probing starts, to reduce pointless probes.",
                 "placeholder": "Enter cooldown minutes"
             }
         },
         "saved": "Saved",
         "saveFailed": "Save failed",
         "backup": {
-            "title": "Backup / Restore",
             "export": {
                 "title": "Export",
-                "includeLogs": "Include Logs",
                 "includeStats": "Include Stats",
-                "format": {
-                    "label": "Format",
-                    "json": "JSON",
-                    "zip": "ZIP",
-                    "logsHint": "ZIP is required when including logs (NDJSON streaming) to avoid memory spikes."
-                },
-                "button": "Download",
+                "button": "Export JSON",
                 "exporting": "Exporting...",
                 "success": "Export started",
-                "failed": "Export failed"
+                "failed": "Export failed",
+                "withLogsButton": "Export Archive with Logs (ZIP)",
+                "withLogsWarning": "The archive with logs is a streamed ZIP export for archival only; it cannot be imported to restore data."
             },
             "import": {
                 "title": "Import (Incremental)",
@@ -304,6 +297,7 @@
                 "button": "Import JSON",
                 "importing": "Importing...",
                 "noFile": "Please select a JSON file first",
+                "invalidFileType": "Only JSON (.json) backup files are supported",
                 "success": "Import successful",
                 "failed": "Import failed",
                 "result": "Import result"
@@ -363,38 +357,6 @@
                 "deleteError": "Failed to delete API key"
             }
         },
-        "llmPrice": {
-            "title": "Model Pricing",
-            "updateInterval": {
-                "label": "Auto Update Interval (hours)",
-                "placeholder": "Enter interval in hours"
-            },
-            "manualUpdate": {
-                "label": "Manual Price Update",
-                "button": "Update Now",
-                "updating": "Updating..."
-            },
-            "lastUpdate": "Last Update",
-            "neverUpdated": "Never updated",
-            "updateSuccess": "Price updated successfully",
-            "updateFailed": "Failed to update price"
-        },
-        "llmSync": {
-            "title": "Channel Sync",
-            "syncInterval": {
-                "label": "Auto Sync Interval (hours)",
-                "placeholder": "Enter interval in hours"
-            },
-            "manualSync": {
-                "label": "Manual Channel Sync",
-                "button": "Sync Now",
-                "syncing": "Syncing..."
-            },
-            "lastSync": "Last Sync",
-            "neverSynced": "Never synced",
-            "syncSuccess": "Channel synced successfully",
-            "syncFailed": "Failed to sync channel"
-        },
         "account": {
             "title": "Account Settings",
             "save": "Save",
@@ -439,7 +401,7 @@
             "updateFailed": "Update failed"
         },
         "log": {
-            "title": "Log Settings",
+            "title": "History Logs",
             "enabled": {
                 "label": "Enable History Logs"
             },
@@ -454,6 +416,49 @@
             },
             "clearSuccess": "Logs cleared",
             "clearFailed": "Failed to clear logs"
+        },
+        "network": {
+            "title": "Network & Service"
+        },
+        "reliability": {
+            "title": "Reliability"
+        },
+        "syncTasks": {
+            "title": "Sync & Scheduled Tasks",
+            "intervalPlaceholder": "Interval (hours)",
+            "last": "Last",
+            "never": "Never",
+            "llmSync": {
+                "label": "Channel sync",
+                "button": "Sync Now",
+                "pending": "Syncing...",
+                "success": "Channel synced successfully",
+                "failed": "Failed to sync channel"
+            },
+            "llmPrice": {
+                "label": "Model price update",
+                "button": "Update Now",
+                "pending": "Updating...",
+                "success": "Price updated successfully",
+                "failed": "Failed to update price"
+            },
+            "siteSync": {
+                "label": "Site full sync",
+                "button": "Sync Now",
+                "pending": "Syncing...",
+                "success": "Background site sync triggered",
+                "failed": "Failed to trigger site sync"
+            },
+            "siteCheckin": {
+                "label": "Site check-in",
+                "button": "Check In",
+                "pending": "Checking in...",
+                "success": "Background site check-in triggered",
+                "failed": "Failed to trigger site check-in"
+            }
+        },
+        "data": {
+            "title": "Data Management"
         }
     },
     "group": {
