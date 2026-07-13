@@ -10,31 +10,18 @@ permissions:
 
 jobs:
   changelog:
-    name: Create Release
+    name: Create Release Notes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.ACTION_TOKEN }}
+          # 使用内置 token；不再依赖未配置的 ACTION_TOKEN
+          token: ${{ github.token }}
 
-      - run: npx changelogithub
+      # 根据 commit 生成/更新 GitHub Release 说明（changelogithub）
+      - name: Generate changelog
+        run: npx changelogithub
         env:
-          GITHUB_TOKEN: ${{secrets.ACTION_TOKEN}}
-
-      - name: Merge dev to master branch
-        run: |
-          git config --global user.name 'GitHub Actions'
-          git config --global user.email 'github-actions@github.com'
-          if ! git show-ref --verify --quiet refs/heads/master; then
-            git checkout -b master
-          else
-            git checkout master
-          fi
-          git fetch origin dev
-          git merge origin/dev
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}
-          git push origin master --force
-        env:
-          GITHUB_TOKEN: ${{secrets.ACTION_TOKEN}}
+          GITHUB_TOKEN: ${{ github.token }}
