@@ -1,9 +1,11 @@
 services:
   octopus:
-    image: hureru/octopus
+    # 默认推送目标：Docker Hub superjeasonfeng/octopus 与 GHCR ghcr.io/superjeason/octopus
+    # 也可改成 :latest-alpine 使用 Alpine 变体
+    image: superjeasonfeng/octopus:latest
     ports:
        - '8080:8080'
-    volumes:      
+    volumes:
        - '/path/to/data:/app/data'
     container_name: octopus
     restart: unless-stopped

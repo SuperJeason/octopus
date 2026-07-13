@@ -28,6 +28,7 @@ import { formatMoney } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useJumpStore } from '@/stores/jump';
+import { ChannelHealthPanel, splitChannelModels } from './health';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -216,6 +217,10 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                     <TabsContents>
                         <TabsContent value="viewing" >
                             <div className="max-h-[60vh] overflow-y-auto space-y-4 sm:space-y-5">
+                                <ChannelHealthPanel
+                                    channelId={channel.id}
+                                    models={splitChannelModels(channel.model, channel.custom_model)}
+                                />
                                 {channel.managed ? (
                                     <section className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-800 dark:text-amber-200">
                                         <div>

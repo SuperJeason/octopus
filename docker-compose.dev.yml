@@ -1,0 +1,14 @@
+services:
+  octopus:
+    build:
+      context: .
+      dockerfile: scripts/dockerfiles/Dockerfile.alpine
+    image: octopus:local-dev
+    container_name: octopus-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped

@@ -208,7 +208,12 @@
         },
         "groupHealth": {
             "label": "Group Health Checks",
-            "description": "When enabled, show the home health summary, group-card health status, and allow manual health checks."
+            "description": "When enabled, show the home health summary, group-card health status, and allow manual health checks.",
+            "probeMessage": {
+                "label": "Probe Message",
+                "description": "User message text sent during group and channel health probes. Falls back to ping when empty.",
+                "placeholder": "ping"
+            }
         },
         "circuitBreaker": {
             "title": "Circuit Breaker",
@@ -903,6 +908,45 @@
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
             "remark": "Remark"
+        },
+        "health": {
+            "title": "Channel Health",
+            "detailTitle": "Channel Health Details",
+            "run": "Probe",
+            "never": "Never",
+            "lastRun": "Last probe: {time}",
+            "status": "Status",
+            "healthy": "Healthy models",
+            "duration": "Duration",
+            "attempts": "Attempts",
+            "empty": "No health checks yet. Run a probe to test models on this channel.",
+            "noHttpStatus": "No HTTP status",
+            "errorDetails": "Error details",
+            "statusValue": {
+                "idle": "Idle",
+                "running": "Running",
+                "success": "Healthy",
+                "partial": "Partial",
+                "failed": "Failed"
+            },
+            "attemptStatus": {
+                "success": "Success",
+                "failed": "Failed",
+                "skipped": "Skipped"
+            },
+            "pickerTitle": "Select models to probe",
+            "pickerDescription": "This channel has {count} models. Only selected models will be probed.",
+            "pickerSearch": "Search models…",
+            "pickerSelected": "Selected {selected}/{total}",
+            "pickerSelectAll": "Select all",
+            "pickerSelectFiltered": "Select filtered",
+            "pickerClearFiltered": "Clear filtered",
+            "pickerEmpty": "This channel has no models configured.",
+            "pickerNoMatch": "No matching models.",
+            "pickerCancel": "Cancel",
+            "pickerConfirm": "Start probe ({count})",
+            "pickerCollapse": "Hide picker",
+            "pickerClearAll": "Clear all"
         }
     },
     "siteChannel": {

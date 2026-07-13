@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { Hash, HeartPulse, ShieldCheck, Timer, TimerOff, type LucideIcon } from 'lucide-react';
+import { Hash, HeartPulse, MessageSquareText, ShieldCheck, Timer, TimerOff, type LucideIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SettingKey } from '@/api/endpoints/setting';
@@ -51,12 +51,24 @@ export function SettingReliability() {
     const t = useTranslations('setting');
     const outlier = useSettingToggle(SettingKey.OutlierRetireEnabled);
     const groupHealth = useSettingToggle(SettingKey.GroupHealthEnabled);
+    const probeMessage = useSettingField(SettingKey.GroupHealthProbeMessage);
 
     return (
         <SettingCard icon={ShieldCheck} title={t('reliability.title')}>
             {/* 分组健康检查 */}
             <SettingRow icon={HeartPulse} label={t('groupHealth.label')} tooltip={t('groupHealth.description')}>
                 <Switch checked={groupHealth.enabled} onCheckedChange={groupHealth.toggle} />
+            </SettingRow>
+            <SettingRow icon={MessageSquareText} label={t('groupHealth.probeMessage.label')} tooltip={t('groupHealth.probeMessage.description')}>
+                <Input
+                    type="text"
+                    value={probeMessage.value}
+                    onChange={(e) => probeMessage.setValue(e.target.value)}
+                    onBlur={probeMessage.save}
+                    placeholder={t('groupHealth.probeMessage.placeholder')}
+                    maxLength={500}
+                    className="w-64 rounded-xl"
+                />
             </SettingRow>
 
             {/* 熔断器 */}

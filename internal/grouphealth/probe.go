@@ -10,6 +10,7 @@ import (
 
 	"github.com/bestruirui/octopus/internal/helper"
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/op"
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
 )
@@ -95,6 +96,32 @@ func (p *Prober) RunCandidate(ctx context.Context, channel model.Channel, usedKe
 	return result
 }
 
+const defaultProbeMessage = "ping"
+const maxProbeMessageRunes = 500
+
+// ResolveProbeMessage returns the effective probe payload text.
+// Empty or whitespace-only values fall back to "ping".
+func ResolveProbeMessage(raw string) string {
+	msg := strings.TrimSpace(raw)
+	if msg == "" {
+		return defaultProbeMessage
+	}
+	runes := []rune(msg)
+	if len(runes) > maxProbeMessageRunes {
+		return string(runes[:maxProbeMessageRunes])
+	}
+	return msg
+}
+
+// LoadProbeMessage reads the configured probe message from settings.
+func LoadProbeMessage() string {
+	raw, err := op.SettingGetString(model.SettingKeyGroupHealthProbeMessage)
+	if err != nil {
+		return defaultProbeMessage
+	}
+	return ResolveProbeMessage(raw)
+}
+
 func buildProbeRequest(ctx context.Context, channel *model.Channel, usedKey *model.ChannelKey, modelName string) (*http.Request, error) {
 	if channel == nil {
 		return nil, fmt.Errorf("channel is nil")
@@ -109,7 +136,7 @@ func buildProbeRequest(ctx context.Context, channel *model.Channel, usedKey *mod
 		return nil, fmt.Errorf("model name is empty")
 	}
 
-	request := buildProbeInternalRequest(channel.Type, modelName)
+	request := buildProbeInternalRequest(channel.Type, modelName, LoadProbeMessage())
 	adapter := outbound.Get(channel.Type)
 	if adapter == nil {
 		return nil, fmt.Errorf("unsupported outbound type: %d", channel.Type)
@@ -117,9 +144,9 @@ func buildProbeRequest(ctx context.Context, channel *model.Channel, usedKey *mod
 	return adapter.TransformRequest(ctx, request, channel.GetBaseUrl(), usedKey.ChannelKey)
 }
 
-func buildProbeInternalRequest(channelType outbound.OutboundType, modelName string) *transformerModel.InternalLLMRequest {
+func buildProbeInternalRequest(channelType outbound.OutboundType, modelName string, probeMessage string) *transformerModel.InternalLLMRequest {
 	stream := false
-	ping := "ping"
+	msg := ResolveProbeMessage(probeMessage)
 	one := int64(1)
 
 	switch channelType {
@@ -128,14 +155,14 @@ func buildProbeInternalRequest(channelType outbound.OutboundType, modelName stri
 			Model:        modelName,
 			RawAPIFormat: transformerModel.APIFormatOpenAIEmbedding,
 			EmbeddingInput: &transformerModel.EmbeddingInput{
-				Single: &ping,
+				Single: &msg,
 			},
 		}
 	case outbound.OutboundTypeOpenAIResponse:
 		return &transformerModel.InternalLLMRequest{
 			Model:               modelName,
 			RawAPIFormat:        transformerModel.APIFormatOpenAIResponse,
-			Messages:            []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &ping}}},
+			Messages:            []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &msg}}},
 			Stream:              &stream,
 			MaxCompletionTokens: &one,
 		}
@@ -143,7 +170,7 @@ func buildProbeInternalRequest(channelType outbound.OutboundType, modelName stri
 		return &transformerModel.InternalLLMRequest{
 			Model:        modelName,
 			RawAPIFormat: transformerModel.APIFormatAnthropicMessage,
-			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &ping}}},
+			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &msg}}},
 			Stream:       &stream,
 			MaxTokens:    &one,
 		}
@@ -151,7 +178,7 @@ func buildProbeInternalRequest(channelType outbound.OutboundType, modelName stri
 		return &transformerModel.InternalLLMRequest{
 			Model:        modelName,
 			RawAPIFormat: transformerModel.APIFormatGeminiContents,
-			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &ping}}},
+			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &msg}}},
 			Stream:       &stream,
 			MaxTokens:    &one,
 		}
@@ -159,7 +186,7 @@ func buildProbeInternalRequest(channelType outbound.OutboundType, modelName stri
 		return &transformerModel.InternalLLMRequest{
 			Model:        modelName,
 			RawAPIFormat: transformerModel.APIFormatOpenAIChatCompletion,
-			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &ping}}},
+			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &msg}}},
 			Stream:       &stream,
 			MaxTokens:    &one,
 		}
@@ -167,7 +194,7 @@ func buildProbeInternalRequest(channelType outbound.OutboundType, modelName stri
 		return &transformerModel.InternalLLMRequest{
 			Model:        modelName,
 			RawAPIFormat: transformerModel.APIFormatOpenAIChatCompletion,
-			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &ping}}},
+			Messages:     []transformerModel.Message{{Role: "user", Content: transformerModel.MessageContent{Content: &msg}}},
 			Stream:       &stream,
 			MaxTokens:    &one,
 		}

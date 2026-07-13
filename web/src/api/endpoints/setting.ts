@@ -29,6 +29,7 @@ export const SettingKey = {
     SSEHeartbeatInterval: 'sse_heartbeat_interval',
     SSEPreStreamHeartbeatDelay: 'sse_pre_stream_heartbeat_delay',
     GroupHealthEnabled: 'group_health_enabled',
+    GroupHealthProbeMessage: 'group_health_probe_message',
     ProjectedChannelAutoGroupEnabled: 'projected_channel_auto_group_enabled',
     OutlierRetireEnabled: 'outlier_retire_enabled',
     OutlierRetireInterval: 'outlier_retire_interval',

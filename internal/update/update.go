@@ -18,10 +18,7 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/log"
 )
 
-const (
-	updateUrl    = "https://github.com/Hureru/octopus/releases/latest/download"
-	updateApiUrl = "https://api.github.com/repos/Hureru/octopus/releases/latest"
-)
+const defaultUpdateRepo = "SuperJeason/octopus"
 
 type LatestInfo struct {
 	TagName     string `json:"tag_name"`
@@ -31,6 +28,49 @@ type LatestInfo struct {
 }
 
 var github_pat = os.Getenv(strings.ToUpper(conf.APP_NAME) + "_GITHUB_PAT")
+
+// resolveUpdateRepo returns "owner/repo" used for GitHub release checks/downloads.
+// Priority: OCTOPUS_UPDATE_REPO env > conf.Repo (github.com/owner/repo) > default.
+func resolveUpdateRepo() string {
+	if env := strings.TrimSpace(os.Getenv(strings.ToUpper(conf.APP_NAME) + "_UPDATE_REPO")); env != "" {
+		return normalizeGitHubRepo(env)
+	}
+	if repo := githubOwnerRepoFromURL(conf.Repo); repo != "" {
+		return repo
+	}
+	return defaultUpdateRepo
+}
+
+func normalizeGitHubRepo(raw string) string {
+	s := strings.TrimSpace(raw)
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	s = strings.TrimPrefix(s, "github.com/")
+	s = strings.TrimPrefix(s, "www.github.com/")
+	s = strings.TrimSuffix(s, ".git")
+	s = strings.Trim(s, "/")
+	parts := strings.Split(s, "/")
+	if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0] + "/" + parts[1]
+	}
+	return s
+}
+
+func githubOwnerRepoFromURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	return normalizeGitHubRepo(s)
+}
+
+func updateApiURL() string {
+	return "https://api.github.com/repos/" + resolveUpdateRepo() + "/releases/latest"
+}
+
+func updateDownloadBaseURL() string {
+	return "https://github.com/" + resolveUpdateRepo() + "/releases/latest/download"
+}
 
 // doRequestWithFallback performs an HTTP GET request, first without proxy, then with proxy if failed.
 func doRequestWithFallback(url string) ([]byte, error) {
@@ -77,7 +117,7 @@ func doRequest(url string, useProxy bool) ([]byte, error) {
 }
 
 func GetLatestInfo() (*LatestInfo, error) {
-	body, err := doRequestWithFallback(updateApiUrl)
+	body, err := doRequestWithFallback(updateApiURL())
 	if err != nil {
 		return nil, err
 	}
