@@ -19,9 +19,8 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          # 显式传入 token，避免部分仓库/组织策略下 github.token 默认值缺失
-          # 若配置了 ACTION_TOKEN（PAT）则优先使用，便于推 tag/创建 release
-          token: ${{ secrets.ACTION_TOKEN || secrets.GITHUB_TOKEN }}
+          # 显式传入内置 token，避免 checkout 报 Input required: token
+          token: ${{ github.token }}
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -56,11 +55,12 @@ jobs:
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           files: build/archives/*
           prerelease: false
           tag_name: ${{ steps.tag.outputs.TAG_NAME }}
-          token: ${{ secrets.ACTION_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Docker meta (Debian)
         id: meta-debian
