@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Activity, ChevronDown, Clock3, LoaderCircle, Play, Search } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
@@ -179,13 +179,13 @@ export function ChannelHealthPanel({
     const [selected, setSelected] = useState<string[]>([]);
     const [query, setQuery] = useState('');
 
+    // hooks 必须在 early return 之前，保持调用顺序稳定
     const availableModels = useMemo(() => models.filter(Boolean), [models]);
-
-    useEffect(() => {
-        if (!pickerOpen) return;
-        setSelected(availableModels);
-        setQuery('');
-    }, [pickerOpen, availableModels]);
+    const filteredModels = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return availableModels;
+        return availableModels.filter((name) => name.toLowerCase().includes(q));
+    }, [availableModels, query]);
 
     if (!enabled || !channelId) return null;
 
@@ -198,14 +198,23 @@ export function ChannelHealthPanel({
         && runChannelHealth.variables?.channelId === channelId;
     const lastRunRelative = formatRelativeTime(latest?.finished_at ?? latest?.started_at ?? null, locale, t('never'));
 
-    const filteredModels = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return availableModels;
-        return availableModels.filter((name) => name.toLowerCase().includes(q));
-    }, [availableModels, query]);
-
     const allFilteredSelected = filteredModels.length > 0
         && filteredModels.every((name) => selected.includes(name));
+
+    const openPicker = () => {
+        // 在事件处理里初始化选择状态，避免 effect 内同步 setState
+        setSelected(availableModels);
+        setQuery('');
+        setPickerOpen(true);
+    };
+
+    const togglePicker = () => {
+        if (pickerOpen) {
+            setPickerOpen(false);
+            return;
+        }
+        openPicker();
+    };
 
     const toggleModel = (name: string) => {
         setSelected((prev) => (
@@ -270,7 +279,7 @@ export function ChannelHealthPanel({
                             onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                setPickerOpen((open) => !open);
+                                togglePicker();
                             }}
                         >
                             {isRunning || isRunPending ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
